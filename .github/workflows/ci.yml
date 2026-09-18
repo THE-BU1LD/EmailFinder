@@ -48,7 +48,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python -m emailfinder.cli build-drafts             --input examples/contacts.csv             --output /tmp/review-batch.json
+          python -m emailfinder.cli build-drafts --input examples/contacts.csv --suppression-ledger examples/suppression.csv --output /tmp/review-batch.json
           python - <<'PY'
           import json
           from pathlib import Path
