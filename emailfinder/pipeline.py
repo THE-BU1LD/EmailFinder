@@ -81,7 +81,13 @@ def load_contacts(path: str | Path) -> list[ContactRecord]:
     return contacts
 
 
-def _eligibility_reason(contact: ContactRecord, min_confidence: float) -> str | None:
+def _eligibility_reason(
+    contact: ContactRecord,
+    min_confidence: float,
+    suppressed_emails: set[str],
+) -> str | None:
+    if contact.normalized_email and contact.normalized_email in suppressed_emails:
+        return "suppression_ledger"
     if contact.suppressed:
         return "suppressed"
     if contact.verification_method in BLOCKED_VERIFICATION_METHODS:
@@ -137,17 +143,24 @@ def build_review_batch(
     *,
     max_batch: int = MAX_REVIEW_BATCH,
     min_confidence: float = 0.8,
+    suppressed_emails: set[str] | None = None,
 ) -> dict[str, object]:
     if not 1 <= max_batch <= MAX_REVIEW_BATCH:
         raise ValueError(f"max_batch must be between 1 and {MAX_REVIEW_BATCH}")
     if not 0.0 <= min_confidence <= 1.0:
         raise ValueError("min_confidence must be within [0, 1]")
 
+    normalized_suppression = {
+        email.strip().casefold()
+        for email in (suppressed_emails or set())
+        if email.strip()
+    }
+
     eligible: list[ContactRecord] = []
     excluded: list[dict[str, object]] = []
 
     for contact in contacts:
-        reason = _eligibility_reason(contact, min_confidence)
+        reason = _eligibility_reason(contact, min_confidence, normalized_suppression)
         if reason is None:
             eligible.append(contact)
         else:
