@@ -1,98 +1,81 @@
 # EmailFinder
 
-> **Status: placeholder / specification only. No contact-discovery implementation is currently committed.**
+**Status: VERIFIED_DRAFT_PIPELINE v0.1 — no sending and no contact-discovery scraping.**
 
-EmailFinder is intended to become a **compliance-first professional contact research helper** for legitimate outreach workflows. The repository name does not imply that it can currently find, verify, enrich, or send email.
+EmailFinder now provides a small compliance-first pipeline for turning a **bounded operator-supplied contact CSV** into a provenance-bearing human review batch.
 
-Canonical repository: `THE-BU1LD/EmailFinder`.
+It does not discover contacts on the internet, guess email addresses, send messages, or claim that syntax checks prove mailbox ownership.
 
-## Intended scope
+## Implemented v0.1
 
-A future implementation may help an operator:
+- typed contact/provenance records;
+- explicit permitted source and verification-method allowlists;
+- hard rejection of guessed/pattern-inferred addresses;
+- suppression handling;
+- confidence thresholding;
+- deterministic email deduplication;
+- hard maximum of **20 drafts per review batch**;
+- output state fixed to `DRAFT_ONLY`;
+- approval state fixed to `PENDING_HUMAN_APPROVAL`;
+- exact-source CI, unit tests, and a synthetic example.
 
-1. ingest a bounded set of target organizations/people;
-2. collect contact information from permitted public professional sources or user-provided records;
-3. retain the exact source/provenance for each contact;
-4. verify rather than guess email addresses;
-5. score relevance and confidence;
-6. deduplicate against prior/current outreach;
-7. prepare **draft-only** outreach records for human approval.
+## Quick start
+
+Python 3.11+; the v0.1 pipeline uses only the standard library.
+
+```bash
+python -m emailfinder.cli build-drafts \
+  --input examples/contacts.csv \
+  --output /tmp/review-batch.json
+```
+
+The output includes eligible drafts plus excluded records and their fail-closed reason.
+
+## Input contract
+
+Required CSV fields:
+
+```text
+organization,person_name,role,email,source_url,source_type,verification_method,
+verification_status,verified_at,confidence,relevance_reason,suppressed
+```
+
+Unknown must remain unknown. An unavailable address does **not** authorize pattern guessing.
+
+See:
+
+- `docs/THREAT_MODEL.md`
+- `docs/PERMITTED_SOURCES.md`
+- `examples/contacts.csv`
 
 ## Hard boundaries
 
 EmailFinder must not become a credential harvester, private-data scraper, guessed-address generator, or unattended spam sender.
 
+The v0.1 repository contains **no sender integration**. Generating a review batch is not approval to contact anyone.
+
 Do not:
 
-- infer or fabricate an email address from a naming pattern and call it verified;
-- collect passwords, session tokens, private account data, or access-controlled records;
-- scrape sensitive personal data or non-professional personal contact details;
-- bypass robots/access controls or provider rate limits;
-- evade unsubscribe/suppression records;
-- automatically message every discovered contact;
-- represent a prospect, reply, partnership, sponsorship, or affiliation as confirmed when it is not.
+- infer an address from a name/domain pattern;
+- collect passwords, tokens, private account data, or sensitive personal data;
+- bypass access controls, robots policies, or provider limits;
+- ignore suppression/unsubscribe state;
+- represent a prospect, reply, partnership, or affiliation as confirmed when it is not.
 
-## Default operating mode
+## Review-batch limits
 
-The safe default is **DRAFT_ONLY**.
+The software enforces at most **20** eligible records per generated batch. Lower values can be requested with `--max-batch`; values above 20 fail closed.
 
-A future pipeline should keep discovery and sending separate:
+This cap is a review-safety boundary, not permission to send 20 messages.
 
-```text
-DISCOVER
-  -> VERIFY
-  -> QUALIFY
-  -> DEDUPLICATE
-  -> PERSONALIZE
-  -> VALIDATE
-  -> APPROVE
-  -> SEND
-```
+## Next safe milestones
 
-Only the final `SEND` transition may contact someone, and it requires explicit campaign authorization outside the discovery step.
+1. add a source-ingestion adapter only for explicitly permitted public professional sources;
+2. preserve immutable retrieval/provenance receipts;
+3. add a verification provider adapter that distinguishes syntax/domain/mailbox evidence;
+4. add a persistent suppression/deduplication ledger;
+5. keep any future sender in a separate explicitly authorized subsystem rather than this discovery/draft pipeline.
 
-Conservative operational limits for any future approved campaign:
+## Repository routing
 
-- at most 20 newly discovered contacts per review batch;
-- at most 50 new contacts per day per campaign;
-- deduplicate before drafting or sending;
-- maintain suppression/unsubscribe state;
-- retain source and verification confidence;
-- stop rather than guess when an address cannot be verified.
-
-## Data model requirements
-
-Every contact record should eventually carry, at minimum:
-
-- organization;
-- person/name when legitimately available;
-- role/title;
-- source URL or source record;
-- source type;
-- verification method;
-- verification timestamp;
-- confidence;
-- relevance reason;
-- deduplication key/state;
-- outreach state;
-- suppression/unsubscribe state;
-- reviewer/approval state.
-
-Unknown must remain unknown. A blank or unavailable address is not a failure condition that authorizes guessing.
-
-## Repository maturity
-
-There is currently **no implementation** in this repository beyond the license. Before calling EmailFinder operational, add:
-
-1. a threat/privacy model;
-2. a permitted-source policy;
-3. a typed contact/provenance schema;
-4. verification and deduplication tests;
-5. rate-limit and suppression tests;
-6. a draft-only output path;
-7. CI;
-8. an explicit approval boundary for any sender integration.
-
-## Success criterion
-
-The first meaningful milestone is **VERIFIED_DRAFT_PIPELINE**: given a bounded input list and permitted sources, produce deduplicated, provenance-bearing, reviewable contact drafts **without sending anything and without guessing missing addresses**.
+Canonical repository: `THE-BU1LD/EmailFinder`.
