@@ -11,7 +11,8 @@ It does not discover contacts on the internet, guess email addresses, send messa
 - typed contact/provenance records;
 - explicit permitted source and verification-method allowlists;
 - hard rejection of guessed/pattern-inferred addresses;
-- suppression handling;
+- per-record suppression handling;
+- optional persistent suppression ledger applied across batches;
 - confidence thresholding;
 - deterministic email deduplication;
 - hard maximum of **20 drafts per review batch**;
@@ -26,6 +27,7 @@ Python 3.11+; the v0.1 pipeline uses only the standard library.
 ```bash
 python -m emailfinder.cli build-drafts \
   --input examples/contacts.csv \
+  --suppression-ledger examples/suppression.csv \
   --output /tmp/review-batch.json
 ```
 
@@ -41,6 +43,8 @@ verification_status,verified_at,confidence,relevance_reason,suppressed
 ```
 
 Unknown must remain unknown. An unavailable address does **not** authorize pattern guessing.
+
+Persistent suppression ledgers use the columns `email,reason,recorded_at,source_ref`. Their normalized email set overrides an otherwise verified/eligible row.
 
 See:
 
