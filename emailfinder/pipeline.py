@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import csv
-from dataclasses import asdict
 from pathlib import Path
 
 from .models import (
