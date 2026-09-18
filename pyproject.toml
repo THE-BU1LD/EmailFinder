@@ -1,0 +1,12 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "emailfinder-draft-pipeline"
+version = "0.1.0"
+description = "Compliance-first provenance and draft-review pipeline for explicitly supplied professional contacts"
+requires-python = ">=3.11"
+
+[tool.setuptools.packages.find]
+include = ["emailfinder*"]
