@@ -2,22 +2,28 @@
 
 **Status: VERIFIED_DRAFT_PIPELINE v0.1 — no sending and no contact-discovery scraping.**
 
-EmailFinder now provides a small compliance-first pipeline for turning a **bounded operator-supplied contact CSV** into a provenance-bearing human review batch.
+EmailFinder is a compliance-first pipeline for turning a **bounded operator-supplied professional contact CSV** into a provenance-bearing human review batch.
 
 It does not discover contacts on the internet, guess email addresses, send messages, or claim that syntax checks prove mailbox ownership.
 
 ## Implemented v0.1
 
 - typed contact/provenance records;
-- explicit permitted source and verification-method allowlists;
+- explicit `verified`, `unverified`, and `unavailable` states;
+- permitted source and verification-method allowlists;
+- a source-adapter protocol for future bounded, policy-approved adapters;
 - hard rejection of guessed/pattern-inferred addresses;
 - suppression handling;
 - confidence thresholding;
-- deterministic email deduplication;
+- deterministic deduplication within the current input;
+- optional deduplication against one or more prior EmailFinder review-batch artifacts;
 - hard maximum of **20 drafts per review batch**;
+- hard maximum of **50 new review entries per day per campaign**, enforced from operator-supplied prior campaign state;
 - output state fixed to `DRAFT_ONLY`;
 - approval state fixed to `PENDING_HUMAN_APPROVAL`;
 - exact-source CI, unit tests, and a synthetic example.
+
+The pipeline still has **no sender integration** and **no network contact-discovery adapter**.
 
 ## Quick start
 
@@ -29,7 +35,19 @@ python -m emailfinder.cli build-drafts \
   --output /tmp/review-batch.json
 ```
 
-The output includes eligible drafts plus excluded records and their fail-closed reason.
+To deduplicate against a previous review batch and represent an existing daily campaign count:
+
+```bash
+python -m emailfinder.cli build-drafts \
+  --input examples/contacts.csv \
+  --prior-batch previous-review-batch.json \
+  --campaign-id research-outreach \
+  --campaign-day 2026-09-19 \
+  --prior-campaign-count 30 \
+  --output /tmp/review-batch.json
+```
+
+The daily count is **operator-supplied state**, not a claim that EmailFinder already has a durable server-side campaign ledger. Persistent suppression/dedup state is a later milestone.
 
 ## Input contract
 
@@ -40,7 +58,13 @@ organization,person_name,role,email,source_url,source_type,verification_method,
 verification_status,verified_at,confidence,relevance_reason,suppressed
 ```
 
-Unknown must remain unknown. An unavailable address does **not** authorize pattern guessing.
+Allowed verification statuses are:
+
+- `verified` — exact evidence supports using the address in a human review draft;
+- `unverified` — evidence is incomplete; exclude from drafting;
+- `unavailable` — no address is available; exclude and **do not guess**.
+
+Unknown must remain unknown. An unavailable address does not authorize pattern guessing.
 
 See:
 
@@ -48,11 +72,17 @@ See:
 - `docs/PERMITTED_SOURCES.md`
 - `examples/contacts.csv`
 
+## Source adapters
+
+`emailfinder.sources.ContactSourceAdapter` defines the contract for future bounded source adapters.
+
+An adapter must identify a permitted source type and return `ContactRecord` values with exact provenance. The interface does **not** authorize scraping, access-control bypass, guessed addresses, or sending.
+
+No network source adapter is included in v0.1.
+
 ## Hard boundaries
 
 EmailFinder must not become a credential harvester, private-data scraper, guessed-address generator, or unattended spam sender.
-
-The v0.1 repository contains **no sender integration**. Generating a review batch is not approval to contact anyone.
 
 Do not:
 
@@ -60,21 +90,24 @@ Do not:
 - collect passwords, tokens, private account data, or sensitive personal data;
 - bypass access controls, robots policies, or provider limits;
 - ignore suppression/unsubscribe state;
+- treat a review-batch cap as permission to send;
 - represent a prospect, reply, partnership, or affiliation as confirmed when it is not.
 
-## Review-batch limits
+## Review-batch and daily limits
 
-The software enforces at most **20** eligible records per generated batch. Lower values can be requested with `--max-batch`; values above 20 fail closed.
+The software enforces at most **20** eligible records per generated review batch.
 
-This cap is a review-safety boundary, not permission to send 20 messages.
+It also enforces a maximum of **50 new review entries per day per campaign** when the operator supplies the prior count for that campaign/day. Values above the hard cap fail closed.
+
+These are review-safety boundaries, not sending authorization.
 
 ## Next safe milestones
 
-1. add a source-ingestion adapter only for explicitly permitted public professional sources;
+1. add one bounded source-ingestion adapter only for explicitly permitted public professional sources;
 2. preserve immutable retrieval/provenance receipts;
 3. add a verification provider adapter that distinguishes syntax/domain/mailbox evidence;
-4. add a persistent suppression/deduplication ledger;
-5. keep any future sender in a separate explicitly authorized subsystem rather than this discovery/draft pipeline.
+4. add a persistent suppression/deduplication ledger with explicit retention and deletion policy;
+5. keep any future sender in a separate, explicitly authorized subsystem with a human approval transition.
 
 ## Repository routing
 
