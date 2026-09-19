@@ -95,8 +95,7 @@ def load_prior_review_emails(paths: Iterable[str | Path]) -> set[str]:
     """Load normalized addresses from prior EmailFinder review-batch artifacts.
 
     This supports deterministic cross-batch deduplication without silently
-    mutating a persistent ledger. A durable suppression/dedup ledger remains a
-    separate future milestone.
+    mutating a persistent ledger.
     """
 
     seen: set[str] = set()
@@ -118,7 +117,24 @@ def load_prior_review_emails(paths: Iterable[str | Path]) -> set[str]:
     return seen
 
 
-def _eligibility_reason(contact: ContactRecord, min_confidence: float) -> str | None:
+def _normalize_email_collection(values: Collection[str]) -> set[str]:
+    normalized: set[str] = set()
+    for value in values:
+        if not isinstance(value, str):
+            raise TypeError("email collections must contain strings")
+        value = value.strip().casefold()
+        if value:
+            normalized.add(value)
+    return normalized
+
+
+def _eligibility_reason(
+    contact: ContactRecord,
+    min_confidence: float,
+    suppressed_emails: set[str],
+) -> str | None:
+    if contact.normalized_email and contact.normalized_email in suppressed_emails:
+        return "suppression_ledger"
     if contact.suppressed:
         return "suppressed"
     if contact.verification_method in BLOCKED_VERIFICATION_METHODS:
@@ -174,23 +190,13 @@ def _excluded(contact: ContactRecord, reason: str) -> dict[str, object]:
     }
 
 
-def _normalize_prior_emails(prior_emails: Collection[str]) -> set[str]:
-    normalized: set[str] = set()
-    for value in prior_emails:
-        if not isinstance(value, str):
-            raise TypeError("prior_emails must contain strings")
-        value = value.strip().casefold()
-        if value:
-            normalized.add(value)
-    return normalized
-
-
 def build_review_batch(
     contacts: list[ContactRecord],
     *,
     max_batch: int = MAX_REVIEW_BATCH,
     min_confidence: float = 0.8,
     prior_emails: Collection[str] = (),
+    suppressed_emails: Collection[str] = (),
     campaign_id: str = "default",
     campaign_day: str = "operator_unspecified",
     prior_campaign_count: int = 0,
@@ -215,12 +221,13 @@ def build_review_batch(
     if not 0 <= prior_campaign_count <= daily_campaign_cap:
         raise ValueError("prior_campaign_count must be between zero and daily_campaign_cap")
 
-    prior_keys = _normalize_prior_emails(prior_emails)
+    prior_keys = _normalize_email_collection(prior_emails)
+    suppression_keys = _normalize_email_collection(suppressed_emails)
     eligible: list[ContactRecord] = []
     excluded: list[dict[str, object]] = []
 
     for contact in contacts:
-        reason = _eligibility_reason(contact, min_confidence)
+        reason = _eligibility_reason(contact, min_confidence, suppression_keys)
         if reason is None and contact.normalized_email in prior_keys:
             reason = "prior_record_duplicate"
         if reason is None:
@@ -228,8 +235,6 @@ def build_review_batch(
         else:
             excluded.append(_excluded(contact, reason))
 
-    # For duplicate verified addresses in the current input, retain the
-    # highest-confidence provenance record.
     ranked = sorted(eligible, key=lambda item: (-item.confidence, item.row_number))
     deduped: dict[str, ContactRecord] = {}
     for contact in ranked:
@@ -260,6 +265,7 @@ def build_review_batch(
         "max_batch": max_batch,
         "min_confidence": min_confidence,
         "prior_email_count": len(prior_keys),
+        "suppression_email_count": len(suppression_keys),
         "campaign": {
             "campaign_id": campaign_id,
             "campaign_day": campaign_day,
