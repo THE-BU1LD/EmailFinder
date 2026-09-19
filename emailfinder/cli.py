@@ -11,6 +11,7 @@ from .pipeline import (
     load_contacts,
     load_prior_review_emails,
 )
+from .suppression import load_suppression_ledger
 
 
 def main() -> None:
@@ -22,6 +23,7 @@ def main() -> None:
     build.add_argument("--output", type=Path, required=True)
     build.add_argument("--max-batch", type=int, default=MAX_REVIEW_BATCH)
     build.add_argument("--min-confidence", type=float, default=0.8)
+    build.add_argument("--suppression-ledger", type=Path)
     build.add_argument(
         "--prior-batch",
         type=Path,
@@ -42,11 +44,17 @@ def main() -> None:
     args = parser.parse_args()
     contacts = load_contacts(args.input)
     prior_emails = load_prior_review_emails(args.prior_batch)
+    suppressed = (
+        load_suppression_ledger(args.suppression_ledger)
+        if args.suppression_ledger is not None
+        else set()
+    )
     payload = build_review_batch(
         contacts,
         max_batch=args.max_batch,
         min_confidence=args.min_confidence,
         prior_emails=prior_emails,
+        suppressed_emails=suppressed,
         campaign_id=args.campaign_id,
         campaign_day=args.campaign_day,
         prior_campaign_count=args.prior_campaign_count,

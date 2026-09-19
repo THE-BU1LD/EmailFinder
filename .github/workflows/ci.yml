@@ -48,7 +48,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python -m emailfinder.cli build-drafts             --input examples/contacts.csv             --output /tmp/review-batch.json
+          python -m emailfinder.cli build-drafts --input examples/contacts.csv --suppression-ledger examples/suppression.csv --output /tmp/review-batch.json
           python - <<'PY'
           import json
           from pathlib import Path
@@ -56,5 +56,7 @@ jobs:
           assert payload['mode'] == 'DRAFT_ONLY'
           assert payload['draft_count'] == 2
           assert payload['draft_count'] <= 20
+          assert payload['suppression_email_count'] == 1
+          assert any(x['reason'] == 'suppression_ledger' for x in payload['excluded'])
           assert all(x['approval_state'] == 'PENDING_HUMAN_APPROVAL' for x in payload['drafts'])
           PY

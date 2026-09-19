@@ -13,6 +13,7 @@ from emailfinder.pipeline import (
     load_prior_review_emails,
 )
 from emailfinder.sources import ContactSourceAdapter, validate_source_adapter
+from emailfinder.suppression import load_suppression_ledger
 
 
 def contact(
@@ -55,9 +56,7 @@ class DraftPipelineTests(unittest.TestCase):
         self.assertNotIn("message", draft)
 
     def test_guessed_or_pattern_inferred_address_is_never_drafted(self):
-        payload = build_review_batch(
-            [contact(2, verification_method="pattern_inferred")]
-        )
+        payload = build_review_batch([contact(2, verification_method="pattern_inferred")])
         self.assertEqual(payload["draft_count"], 0)
         self.assertEqual(
             payload["excluded"][0]["reason"],
@@ -115,11 +114,27 @@ class DraftPipelineTests(unittest.TestCase):
                 load_prior_review_emails([path])
 
     def test_invalid_source_url_fails_closed(self):
-        payload = build_review_batch(
-            [contact(2, source_url="file:///private/contact.txt")]
-        )
+        payload = build_review_batch([contact(2, source_url="file:///private/contact.txt")])
         self.assertEqual(payload["draft_count"], 0)
         self.assertEqual(payload["excluded"][0]["reason"], "missing_or_invalid_source_url")
+
+    def test_persistent_suppression_ledger_overrides_verified_row(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "suppression.csv"
+            path.write_text(
+                "email,reason,recorded_at,source_ref\n"
+                "BLOCKED@example.com,opt_out,2026-09-18T00:00:00Z,manual-test\n",
+                encoding="utf-8",
+            )
+            suppressed = load_suppression_ledger(path)
+
+        payload = build_review_batch(
+            [contact(2, email="blocked@EXAMPLE.com")],
+            suppressed_emails=suppressed,
+        )
+        self.assertEqual(payload["draft_count"], 0)
+        self.assertEqual(payload["excluded"][0]["reason"], "suppression_ledger")
+        self.assertEqual(payload["suppression_email_count"], 1)
 
     def test_batch_cap_is_hard_limited_to_twenty(self):
         contacts = [contact(row) for row in range(2, 27)]
