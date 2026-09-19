@@ -31,6 +31,8 @@ BLOCKED_VERIFICATION_METHODS = frozenset(
     }
 )
 
+VERIFICATION_STATUSES = frozenset({"verified", "unverified", "unavailable"})
+
 
 @dataclass(frozen=True)
 class ContactRecord:
