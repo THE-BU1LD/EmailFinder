@@ -1,9 +1,18 @@
 from __future__ import annotations
 
+import json
+import tempfile
 import unittest
+from pathlib import Path
 
 from emailfinder.models import ContactRecord
-from emailfinder.pipeline import MAX_REVIEW_BATCH, build_review_batch
+from emailfinder.pipeline import (
+    MAX_DAILY_CAMPAIGN_CONTACTS,
+    MAX_REVIEW_BATCH,
+    build_review_batch,
+    load_prior_review_emails,
+)
+from emailfinder.sources import ContactSourceAdapter, validate_source_adapter
 
 
 def contact(
@@ -55,16 +64,17 @@ class DraftPipelineTests(unittest.TestCase):
             "guessed_or_inferred_address_prohibited",
         )
 
-    def test_unverified_and_suppressed_contacts_are_excluded(self):
+    def test_unverified_unavailable_and_suppressed_contacts_are_distinct(self):
         payload = build_review_batch(
             [
                 contact(2, verification_status="unverified"),
-                contact(3, suppressed=True),
+                contact(3, email="", verification_status="unavailable"),
+                contact(4, suppressed=True),
             ]
         )
         self.assertEqual(payload["draft_count"], 0)
         reasons = {item["reason"] for item in payload["excluded"]}
-        self.assertEqual(reasons, {"not_verified", "suppressed"})
+        self.assertEqual(reasons, {"not_verified", "address_unavailable", "suppressed"})
 
     def test_duplicate_email_keeps_highest_confidence_record(self):
         payload = build_review_batch(
@@ -76,6 +86,33 @@ class DraftPipelineTests(unittest.TestCase):
         self.assertEqual(payload["draft_count"], 1)
         self.assertEqual(payload["drafts"][0]["confidence"], 0.99)
         self.assertIn("duplicate_email", {x["reason"] for x in payload["excluded"]})
+
+    def test_prior_review_batch_addresses_are_deduplicated(self):
+        payload = build_review_batch(
+            [contact(2, email="prior@example.com"), contact(3)],
+            prior_emails={"PRIOR@example.com"},
+        )
+        self.assertEqual(payload["draft_count"], 1)
+        self.assertEqual(payload["drafts"][0]["email"], "person3@example.com")
+        self.assertIn("prior_record_duplicate", {x["reason"] for x in payload["excluded"]})
+
+    def test_prior_batch_loader_accepts_only_draft_pipeline_artifacts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "prior.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "mode": "DRAFT_ONLY",
+                        "drafts": [{"email": "Past@Example.com"}],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            self.assertEqual(load_prior_review_emails([path]), {"past@example.com"})
+
+            path.write_text(json.dumps({"mode": "SEND", "drafts": []}), encoding="utf-8")
+            with self.assertRaises(ValueError):
+                load_prior_review_emails([path])
 
     def test_invalid_source_url_fails_closed(self):
         payload = build_review_batch(
@@ -93,6 +130,48 @@ class DraftPipelineTests(unittest.TestCase):
 
         with self.assertRaises(ValueError):
             build_review_batch(contacts, max_batch=MAX_REVIEW_BATCH + 1)
+
+    def test_daily_campaign_cap_is_enforced_from_operator_supplied_state(self):
+        contacts = [contact(row) for row in range(2, 5)]
+        payload = build_review_batch(
+            contacts,
+            campaign_id="research-review",
+            campaign_day="2026-09-19",
+            prior_campaign_count=49,
+        )
+        self.assertEqual(payload["draft_count"], 1)
+        self.assertEqual(payload["campaign"]["daily_cap"], MAX_DAILY_CAMPAIGN_CONTACTS)
+        self.assertEqual(payload["campaign"]["projected_count"], 50)
+        self.assertEqual(payload["campaign"]["remaining_after_batch"], 0)
+        deferred = [
+            item
+            for item in payload["excluded"]
+            if item["reason"] == "daily_campaign_cap_deferred"
+        ]
+        self.assertEqual(len(deferred), 2)
+
+        with self.assertRaises(ValueError):
+            build_review_batch(contacts, prior_campaign_count=51)
+
+    def test_source_adapter_contract_rejects_unpermitted_types(self):
+        class AllowedAdapter:
+            source_type = "organization_site"
+
+            def load(self) -> list[ContactRecord]:
+                return [contact(2)]
+
+        class BlockedAdapter:
+            source_type = "private_scrape"
+
+            def load(self) -> list[ContactRecord]:
+                return [contact(2)]
+
+        allowed = AllowedAdapter()
+        self.assertIsInstance(allowed, ContactSourceAdapter)
+        validate_source_adapter(allowed)
+
+        with self.assertRaises(ValueError):
+            validate_source_adapter(BlockedAdapter())
 
 
 if __name__ == "__main__":
