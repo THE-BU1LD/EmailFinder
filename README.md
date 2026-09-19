@@ -13,7 +13,8 @@ It does not discover contacts on the internet, guess email addresses, send messa
 - permitted source and verification-method allowlists;
 - a source-adapter protocol for future bounded, policy-approved adapters;
 - hard rejection of guessed/pattern-inferred addresses;
-- suppression handling;
+- per-record suppression handling;
+- optional operator-maintained persistent suppression ledger applied across batches;
 - confidence thresholding;
 - deterministic deduplication within the current input;
 - optional deduplication against one or more prior EmailFinder review-batch artifacts;
@@ -21,7 +22,7 @@ It does not discover contacts on the internet, guess email addresses, send messa
 - hard maximum of **50 new review entries per day per campaign**, enforced from operator-supplied prior campaign state;
 - output state fixed to `DRAFT_ONLY`;
 - approval state fixed to `PENDING_HUMAN_APPROVAL`;
-- exact-source CI, unit tests, and a synthetic example.
+- exact-source CI, unit tests, and synthetic examples.
 
 The pipeline still has **no sender integration** and **no network contact-discovery adapter**.
 
@@ -32,6 +33,7 @@ Python 3.11+; the v0.1 pipeline uses only the standard library.
 ```bash
 python -m emailfinder.cli build-drafts \
   --input examples/contacts.csv \
+  --suppression-ledger examples/suppression.csv \
   --output /tmp/review-batch.json
 ```
 
@@ -40,6 +42,7 @@ To deduplicate against a previous review batch and represent an existing daily c
 ```bash
 python -m emailfinder.cli build-drafts \
   --input examples/contacts.csv \
+  --suppression-ledger examples/suppression.csv \
   --prior-batch previous-review-batch.json \
   --campaign-id research-outreach \
   --campaign-day 2026-09-19 \
@@ -47,7 +50,7 @@ python -m emailfinder.cli build-drafts \
   --output /tmp/review-batch.json
 ```
 
-The daily count is **operator-supplied state**, not a claim that EmailFinder already has a durable server-side campaign ledger. Persistent suppression/dedup state is a later milestone.
+The suppression ledger is an operator-maintained CSV with columns `email,reason,recorded_at,source_ref`; its normalized addresses override otherwise eligible rows. The daily campaign count is still **operator-supplied state**, and cross-batch deduplication still depends on supplied prior review artifacts rather than a server-side campaign ledger.
 
 ## Input contract
 
@@ -71,6 +74,7 @@ See:
 - `docs/THREAT_MODEL.md`
 - `docs/PERMITTED_SOURCES.md`
 - `examples/contacts.csv`
+- `examples/suppression.csv`
 
 ## Source adapters
 
@@ -106,7 +110,7 @@ These are review-safety boundaries, not sending authorization.
 1. add one bounded source-ingestion adapter only for explicitly permitted public professional sources;
 2. preserve immutable retrieval/provenance receipts;
 3. add a verification provider adapter that distinguishes syntax/domain/mailbox evidence;
-4. add a persistent suppression/deduplication ledger with explicit retention and deletion policy;
+4. add durable dedup/campaign state only with explicit retention and deletion policy, while preserving suppression precedence;
 5. keep any future sender in a separate, explicitly authorized subsystem with a human approval transition.
 
 ## Repository routing
